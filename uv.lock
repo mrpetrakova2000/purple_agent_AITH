@@ -25,6 +25,33 @@ http-server = [
 ]
 
 [[package]]
+name = "agent-template"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "a2a-sdk", extra = ["http-server"] },
+    { name = "mistralai" },
+    { name = "uvicorn" },
+]
+
+[package.optional-dependencies]
+test = [
+    { name = "httpx" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "a2a-sdk", extras = ["http-server"], specifier = ">=0.3.20" },
+    { name = "mistralai", specifier = ">=1.0.0" },
+    { name = "uvicorn", specifier = ">=0.38.0" },
+    { name = "httpx", marker = "extra == 'test'", specifier = ">=0.28.1" },
+    { name = "pytest", marker = "extra == 'test'", specifier = ">=8.0.0" },
+    { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.24.0" },
+]
+
+[[package]]
 name = "annotated-doc"
 version = "0.0.4"
 source = { registry = "https://pypi.org/simple" }
@@ -225,6 +252,15 @@ wheels = [
 ]
 
 [[package]]
+name = "iniconfig"
+version = "2.3.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/72/34/14ca021ce8e5dfedc35312d08ba8bf51fdd999c576889fc2c24cb97f4f10/iniconfig-2.3.0.tar.gz", hash = "sha256:c76315c77db068650d49c5b56314774a7804df16fee4402c1f19d6d15d8c4730", size = 20503 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cb/b1/3846dd7f199d53cb17f49cba7e651e9ce294d8497c8c150530ed11865bb8/iniconfig-2.3.0-py3-none-any.whl", hash = "sha256:f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12", size = 7484 },
+]
+
+[[package]]
 name = "jsonpath-python"
 version = "1.0.6"
 source = { registry = "https://pypi.org/simple" }
@@ -274,6 +310,24 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/15/2d/6d1e9f84c715109281a95676c19168f21a24c84f50f0d48c0ec4c612a153/opentelemetry_semantic_conventions-0.60b1.tar.gz", hash = "sha256:4775e00bf5a5ab2306b8d715c19ad7d7f8a08c867c9a47a7b8fe4b1c802bf3c2", size = 115490 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/8a/c3/ecaf474528b64507a8b78898a9e8a96c1c066ed86fb9c890e245411e46e0/opentelemetry_semantic_conventions-0.60b1-py3-none-any.whl", hash = "sha256:2c8f10f19892b4efbfa8120f09687e53be8cbbd6821b0acbdfe2847f1819398b", size = 150664 },
+]
+
+[[package]]
+name = "packaging"
+version = "25.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a1/d4/1fc4078c65507b51b96ca8f8c3ba19e6a61c8253c72794544580a7b6c24d/packaging-25.0.tar.gz", hash = "sha256:d443872c98d677bf60f6a1f2f8c1cb748e8fe762d2bf9d3148b5599295b0fc4f", size = 165727 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/20/12/38679034af332785aac8774540895e234f4d07f7545804097de4b666afd8/packaging-25.0-py3-none-any.whl", hash = "sha256:29572ef2b1f17581046b3a2227d5c611fb25ec70ca1ba8554b24b0e69331a484", size = 66469 },
+]
+
+[[package]]
+name = "pluggy"
+version = "1.6.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f9/e2/3e91f31a7d2b083fe6ef3fa267035b518369d9511ffab804f839851d2779/pluggy-1.6.0.tar.gz", hash = "sha256:7dcc130b76258d33b90f61b658791dede3486c3e6bfb003ee5c9bfb396dd22f3", size = 69412 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/54/20/4d324d65cc6d9205fabedc306948156824eb9f0ee1633355a8f7ec5c66bf/pluggy-1.6.0-py3-none-any.whl", hash = "sha256:e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746", size = 20538 },
 ]
 
 [[package]]
@@ -352,6 +406,33 @@ wheels = [
 ]
 
 [[package]]
+name = "pytest"
+version = "9.0.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorama", marker = "sys_platform == 'win32'" },
+    { name = "iniconfig" },
+    { name = "packaging" },
+    { name = "pluggy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d1/db/7ef3487e0fb0049ddb5ce41d3a49c235bf9ad299b6a25d5780a89f19230f/pytest-9.0.2.tar.gz", hash = "sha256:75186651a92bd89611d1d9fc20f0b4345fd827c41ccd5c299a868a05d70edf11", size = 1568901 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3b/ab/b3226f0bd7cdcf710fbede2b3548584366da3b19b5021e74f5bde2a8fa3f/pytest-9.0.2-py3-none-any.whl", hash = "sha256:711ffd45bf766d5264d487b917733b453d917afd2b0ad65223959f59089f875b", size = 374801 },
+]
+
+[[package]]
+name = "pytest-asyncio"
+version = "1.3.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pytest" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/90/2c/8af215c0f776415f3590cac4f9086ccefd6fd463befeae41cd4d3f193e5a/pytest_asyncio-1.3.0.tar.gz", hash = "sha256:d7f52f36d231b80ee124cd216ffb19369aa168fc10095013c6b014a34d3ee9e5", size = 50087 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e5/35/f8b19922b6a25bc0880171a2f1a003eaeb93657475193ab516fd87cac9da/pytest_asyncio-1.3.0-py3-none-any.whl", hash = "sha256:611e26147c7f77640e6d0a92a38ed17c3e9848063698d5c93d5aa7aa11cebff5", size = 15075 },
+]
+
+[[package]]
 name = "python-dateutil"
 version = "2.9.0.post0"
 source = { registry = "https://pypi.org/simple" }
@@ -361,15 +442,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/5d/df/5fbbf21f7419bddedc02fdf40545d2152524daa2db6202cbf060faf61378/python_dateutil-2.9.0.post0.tar.gz", hash = "sha256:37dd54208da7e1cd875388217d5e00ebd4179249f90fb72437e91a35459a0ad3", size = 342432 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ec/57/56b9bcc3c9c6a792fcbaf139543cee77261f3651ca9da0c93f5c1221264b/python_dateutil-2.9.0.post0-py2.py3-none-any.whl", hash = "sha256:a8b2bc7bffae718281ca814367fd52aeefcee64c6cee4d550e865e0a4343d099", size = 229576 },
-]
-
-[[package]]
-name = "python-dotenv"
-version = "1.2.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/79/a4/2a6a5de5d4cb04fbc2a2bebcf169d8fcf347dd041ea24f6578f2bd02aacd/python_dotenv-1.2.1.tar.gz", hash = "sha256:af82e7908c27b68b3c5c52471a6e76c25c056dd47b91ef46f2aa26963f2d46f5", size = 41137 }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/14/1b/a298b067491074d4a790b50049bcbeb9713ab18394f825b151a3d3beab65/python_dotenv-1.2.1-py3-none-any.whl", hash = "sha256:b7d3f0f59ff6076165c9e12385782b5e3b6d5cd0da1de9090fa73c2ecc8b546b", size = 20598 },
 ]
 
 [[package]]
@@ -473,23 +545,4 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/cb/ce/f06b84e2697fef4688ca63bdb2fdf113ca0a3be33f94488f2cadb690b0cf/uvicorn-0.38.0.tar.gz", hash = "sha256:fd97093bdd120a2609fc0d3afe931d4d4ad688b6e75f0f929fde1bc36fe0e91d", size = 80605 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ee/d9/d88e73ca598f4f6ff671fb5fde8a32925c2e08a637303a1d12883c7305fa/uvicorn-0.38.0-py3-none-any.whl", hash = "sha256:48c0afd214ceb59340075b4a052ea1ee91c16fbc2a9b1469cca0e54566977b02", size = 68109 },
-]
-
-[[package]]
-name = "meta-game-bargaining-agent-purple"
-version = "0.1.0"
-source = { virtual = "." }
-dependencies = [
-    { name = "a2a-sdk", extra = ["http-server"] },
-    { name = "mistralai" },
-    { name = "python-dotenv" },
-    { name = "uvicorn" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "a2a-sdk", extras = ["http-server"], specifier = ">=0.3.20" },
-    { name = "mistralai", specifier = ">=1.0.0" },
-    { name = "python-dotenv", specifier = ">=1.2.1" },
-    { name = "uvicorn", specifier = ">=0.38.0" },
 ]
