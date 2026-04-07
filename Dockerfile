@@ -9,6 +9,7 @@ COPY src src
 
 RUN \
     --mount=type=cache,target=/home/agent/.cache/uv,uid=1000 \
+    uv lock && \
     uv sync --locked
 
 ENTRYPOINT ["uv", "run", "src/server.py"]
