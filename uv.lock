@@ -206,7 +206,6 @@ requires-dist = [
     { name = "a2a-sdk", extras = ["http-server"], specifier = ">=0.3.20" },
     { name = "httpx", marker = "extra == 'test'", specifier = ">=0.28.1" },
     { name = "mistralai", specifier = ">=1.0.0" },
-    { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "uvicorn", specifier = ">=0.38.0" },
 ]
 provides-extras = ["test"]
