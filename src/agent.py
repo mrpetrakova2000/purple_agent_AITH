@@ -1,200 +1,156 @@
-import json, re, os, logging
+import json
+import os
+import re
 from typing import Any
+
 from mistralai.client import Mistral
 from a2a.server.tasks import TaskUpdater
 from a2a.types import Message, TaskState, Part, TextPart
 from a2a.utils import get_message_text
 
-# Системный промпт с правилами M1-M5
-SYSTEM_PROMPT = """Вы — переговорщик в мета-игре торга AgentBeats.
+MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY")
+MISTRAL_MODEL = os.environ.get("MISTRAL_MODEL", "mistral-small-latest")
 
-## ЖЁСТКИЕ ПРАВИЛА (нарушение = проигрыш):
-- M2: Не предлагайте сделку дешевле вашего BATNA
-- M3: Не предлагайте ВСЕ или НОЛЬ предметов себе
-- M4: Не ПРИНИМАЙТЕ предложение дешевле вашего BATNA
-- M5: Не ОТКАЗЫВАЙТЕСЬ от предложения дороже вашего BATNA на последнем раунде
+if not MISTRAL_API_KEY:
+    raise RuntimeError("MISTRAL_API_KEY environment variable is required")
 
-## ЦЕЛЬ: Максимизировать Nash Welfare = sqrt(ваш_выигрыш × выигрыш_оппонента)
-Ключ: предметы, которые вы цените МЕНЬШЕ, могут быть ОЧЕНЬ ценны для оппонента.
+client = Mistral(api_key=MISTRAL_API_KEY)
 
-## Формат ответа:
-1. Думайте шаг за шагом внутри <think>...</think>
-2. Затем дайте валидный JSON:
-   - Для предложения: {"allocation_self": [x,y,z], "allocation_other": [a,b,c], "reason": "..."}
-   - Для принятия: {"accept": true/false, "reason": "..."}
-"""
+SYSTEM_PROMPT = """You are a negotiator in the AgentBeats bargaining meta-game.
 
-class GameMemory:
-    """Память об одной игре: история предложений, статистика оппонента."""
-    def __init__(self, opp_key: str = ""):
-        self.opp_key = opp_key
-        self.my_offers = []      # [(allocation, value), ...]
-        self.opp_offers = []     # [(allocation_to_me, value_for_me), ...]
-        self.round_index = 0
-        self.valuations = []     # [v1, v2, v3]
-        self.batna = 0           # fallback payoff
-        self.quantities = []     # [q1, q2, q3]
-        self.discount = 0.98
-        self.best_offer_value = 0
+## HARD RULES (never violate):
+- M2: Never propose/accept a deal worth less than your BATNA
+- M3: Never offer ALL items or ZERO items to yourself
+- M4: Never ACCEPT an offer worth less than your BATNA
+- M5: Never WALK AWAY from an offer worth MORE than your BATNA on the last round
 
-class Agent:
-    def __init__(self):
-        # Инициализация LLM клиента (Mistral / OpenRouter)
-        api_key = os.environ.get("MISTRAL_API_KEY")
-        self.client = Mistral(api_key=api_key)
-        self.model = os.environ.get("MISTRAL_MODEL", "mistral-large-latest")
-        self.conversation_history = []
-        self.game_memory = GameMemory()
-    
-    def _parse_observation(self, text: str) -> dict | None:
-        """Извлекает JSON-наблюдение из входящего сообщения."""
-        blocks = re.findall(r"```(?:json)?\s*(.*?)```", text, re.DOTALL | re.I)
-        for c in blocks + [text]:
-            try:
-                data = json.loads(c.strip())
-                if isinstance(data, dict):
-                    return data
-            except json.JSONDecodeError:
-                continue
-        return None
-    
-    def _build_situation(self, obs: dict, action: str) -> str:
-        """Строит контекстный блок [SITUATION] для LLM с числами и стратегией."""
-        mem = self.game_memory
-        lines = ["\n[SITUATION — используйте эти факты для рассуждений]"]
-        
-        # Позиция агента
-        if mem.valuations and mem.quantities:
-            total = sum(v*q for v, q in zip(mem.valuations, mem.quantities))
-            lines.append(f"\n## Моя позиция")
-            lines.append(f" Оценки предметов: {mem.valuations}")
-            lines.append(f" Количество: {mem.quantities}")
-            lines.append(f" BATNA: {mem.batna}, Всего возможно: {total}")
-            lines.append(f" Раунд: {mem.round_index}, Дисконт: {mem.discount}")
-            
-            # Стратегическая подсказка: какие предметы дешевле отдать
-            sorted_items = sorted(range(len(mem.valuations)), 
-                               key=lambda i: mem.valuations[i])
-            cheapest = [f"type{i}(val={mem.valuations[i]})" for i in sorted_items]
-            lines.append(f" Предметы, которые мне дешевле отдать: {', '.join(cheapest)}")
-        
-        # История предложений оппонента
-        if mem.opp_offers:
-            lines.append(f"\n## Предложения оппонента:")
-            for i, (alloc, val) in enumerate(mem.opp_offers):
-                lines.append(f"  Раунд {i+1}: дал мне {alloc} (ценность для меня = {val})")
-        
-        # Контекст действия
-        if action == "PROPOSE":
-            lines.append(f"\n## Задача: ПРЕДЛОЖИТЬ распределение")
-            lines.append(f" Ограничение: ценность >= BATNA ({mem.batna})")
-            lines.append(f" Стратегия: отдавайте оппоненту предметы, которые вы цените меньше!")
-        elif action == "ACCEPT_OR_REJECT":
-            offer_val = obs.get("offer_value", 0)
-            lines.append(f"\n## Задача: ПРИНЯТЬ или ОТКЛОНИТЬ")
-            lines.append(f" Предложение: {offer_val}, BATNA: {mem.batna}")
-            if offer_val >= mem.batna:
-                lines.append(f" ✓ Предложение ВЫШЕ BATNA — принятие безопасно")
-            else:
-                lines.append(f" ✗ Предложение НИЖЕ BATNA — M4 требует отклонить")
-        
-        return "\n".join(lines)
-    
-    def _validate_and_fix(self, reply: str, obs: dict, action: str) -> str:
-        """Проверка правил M1-M5 и авто-исправление нарушений."""
+## GOAL: MAXIMIZE NASH WELFARE
+Nash Welfare = sqrt(your_payoff × opponent_payoff).
+Give opponent items you value LEAST — this boosts mutual gain.
+
+## RESPONSE FORMAT
+Part 1 — THINKING (inside <think> tags):
+Reason step-by-step about valuations, BATNA, opponent behavior.
+
+Part 2 — DECISION (valid JSON after </thought>):
+For PROPOSE: {"allocation_self": [x,y,z], "allocation_other": [a,b,c], "reason": "..."}
+For ACCEPT_OR_REJECT: {"accept": true/false, "reason": "..."}
+
+JSON must come AFTER </thought>. No markdown code blocks."""
+
+def _parse_observation(text: str) -> dict[str, Any] | None:
+    """Extract JSON from message."""
+    blocks = re.findall(r"```(?:json)?\s*(.*?)```", text, re.IGNORECASE | re.DOTALL)
+    candidates = list(blocks) + [text]
+    for c in candidates:
+        c = c.strip()
+        if not c:
+            continue
         try:
-            parsed = json.loads(reply.strip())
-        except:
-            return reply
-        
-        mem = self.game_memory
-        v, q = mem.valuations, mem.quantities
-        
-        if action == "PROPOSE" and v and q:
-            alloc = parsed.get("allocation_self")
-            if alloc and isinstance(alloc, list):
-                my_val = sum(vi*ai for vi, ai in zip(v, alloc))
-                
-                # M2: ценность < BATNA
-                if my_val < mem.batna:
-                    return self._fix_proposal(parsed, v, q, mem.batna)
-                
-                # M3: все или ничего
-                if sum(alloc) == 0 or sum(alloc) == sum(q):
-                    return self._fix_proposal(parsed, v, q, mem.batna)
-        
-        elif action == "ACCEPT_OR_REJECT":
-            offer_val = obs.get("offer_value", 0)
-            batna_val = obs.get("batna_value", mem.batna)
-            
-            # M4: принять предложение < BATNA
-            if parsed.get("accept") is True and offer_val < batna_val:
-                return json.dumps({"accept": False, "reason": "M4 fix: offer < BATNA"})
-            
-            # M5: отклонить предложение > BATNA на последнем раунде
-            if parsed.get("accept") is False and offer_val > batna_val:
-                if mem.round_index >= mem.max_rounds:
-                    return json.dumps({"accept": True, "reason": "M5 fix: last round"})
-        
+            data = json.loads(c)
+            if isinstance(data, dict):
+                return data
+        except json.JSONDecodeError:
+            continue
+    return None
+
+def _extract_json_from_cot(reply: str) -> str:
+    """Extract JSON after </thought> or from anywhere."""
+    # Try to find JSON after </thought>
+    match = re.search(r"</thought>\s*(.*)", reply, re.DOTALL)
+    if match:
+        after = match.group(1).strip()
+        parsed = _parse_observation(after)
+        if parsed:
+            return json.dumps(parsed)
+    # Fallback: search anywhere
+    parsed = _parse_observation(reply)
+    if parsed:
+        return json.dumps(parsed)
+    return reply
+
+def _validate_and_fix(reply: str, obs: dict, action: str) -> str:
+    """Simple safety check for M2/M4 (BATNA constraint)."""
+    parsed = _parse_observation(reply)
+    if not parsed:
         return reply
     
-    def _fix_proposal(self, parsed: dict, v: list, q: list, batna: int) -> str:
-        """Находит валидное распределение, максимизирующее Nash Welfare."""
-        import itertools
-        target = batna
-        best_alloc, best_nw = None, -1
-        total_items = sum(q)
-        
-        for combo in itertools.product(*[range(qi+1) for qi in q]):
-            a = list(combo)
-            if sum(a) in (0, total_items):  # M3
-                continue
-            my_val = sum(vi*ai for vi, ai in zip(v, a))
-            if my_val < target:  # M2
-                continue
-            # Nash Welfare proxy: баланс между моей ценностью и предметами оппонента
-            opp_items = total_items - sum(a)
-            nw_proxy = (my_val**0.5) * (opp_items + 1)**0.5
-            if nw_proxy > best_nw:
-                best_nw, best_alloc = nw_proxy, a
-        
-        if best_alloc:
-            parsed["allocation_self"] = best_alloc
-            parsed["allocation_other"] = [q[i]-best_alloc[i] for i in range(len(q))]
-        return json.dumps(parsed)
+    batna = obs.get("batna_value", obs.get("batna_self", 0))
+    valuations = obs.get("valuations_self", [])
     
-    async def run(self, message: Message, updater: TaskUpdater) -> None:
-        """Основной цикл обработки A2A-сообщения."""
-        input_text = get_message_text(message)
-        await updater.update_status(TaskState.working)
+    if action == "PROPOSE" and "allocation_self" in parsed and valuations:
+        alloc = parsed["allocation_self"]
+        if isinstance(alloc, list) and len(alloc) == len(valuations):
+            my_val = sum(v * a for v, a in zip(valuations, alloc))
+            if my_val < batna:
+                quantities = obs.get("quantities", [0]*len(valuations))
+                parsed["allocation_self"] = quantities
+                parsed["allocation_other"] = [0]*len(valuations)
+                parsed["reason"] = f"M2 fix: ensured value >= BATNA ({batna})"
+                return json.dumps(parsed)
+    
+    elif action == "ACCEPT_OR_REJECT":
+        offer_value = obs.get("offer_value", 0)
+        accept = parsed.get("accept")
+        if accept is True and offer_value < batna:
+            return json.dumps({"accept": False, "reason": f"M4 fix: offer {offer_value} < BATNA {batna}"})
+        if accept is False and offer_value > batna and obs.get("round_index", 0) >= obs.get("max_rounds", 5):
+            return json.dumps({"accept": True, "reason": f"M5 fix: last round, offer {offer_value} > BATNA {batna}"})
+    
+    return reply
+
+async def run(message: Message, updater: TaskUpdater) -> None:
+    """Main A2A handler."""
+    input_text = get_message_text(message)
+    await updater.update_status(TaskState.working)
+    
+    obs = _parse_observation(input_text)
+    action = obs.get("action", "") if obs else ""
+    
+    situation = ""
+    if obs:
+        v = obs.get("valuations_self", [])
+        q = obs.get("quantities", [])
+        batna = obs.get("batna_value", obs.get("batna_self", 0))
+        round_idx = obs.get("round_index", 0)
+        max_rounds = obs.get("max_rounds", 5)
         
-        # Парсинг наблюдения
-        obs = self._parse_observation(input_text)
-        action = obs.get("action", "") if obs else ""
+        situation = f"\n[SITUATION]\n"
+        if v and q:
+            total = sum(vi * qi for vi, qi in zip(v, q))
+            situation += f"My valuations: {v}\nQuantities: {q}\nTotal if keep all: {total}\nBATNA: {batna}\n"
+            situation += f"Round: {round_idx}/{max_rounds}\n"
+            cheapest = sorted(range(len(v)), key=lambda i: v[i])
+            situation += f"Cheapest items for me (offer first): {[f'type{i}' for i in cheapest]}\n"
         
-        if obs:
-            # Обновление памяти игры
-            self._update_memory(obs)
-            # Построение контекста для LLM
-            situation = self._build_situation(obs, action)
-            enriched_input = input_text + "\n" + situation
-            self.conversation_history.append({"role": "user", "content": enriched_input})
-        
-        # Вызов LLM
-        llm_reply = self._call_llm_with_retry([
-            {"role": "system", "content": SYSTEM_PROMPT},
-            *self.conversation_history
-        ])
-        
-        # Извлечение JSON из chain-of-thought ответа
-        json_reply = self._extract_json_from_cot(llm_reply)
-        
-        # Валидация и исправление
-        final_reply = self._validate_and_fix(json_reply, obs or {}, action)
-        
-        # Ответ через A2A
-        self.conversation_history.append({"role": "assistant", "content": final_reply})
-        await updater.add_artifact(
-            parts=[Part(root=TextPart(text=final_reply))],
-            name="Response"
-        )
+        if action == "ACCEPT_OR_REJECT":
+            offer_val = obs.get("offer_value", 0)
+            situation += f"Opponent offer value: {offer_val}\n"
+            if offer_val >= batna:
+                situation += f"✓ Offer >= BATNA — accepting is safe\n"
+            else:
+                situation += f"✗ Offer < BATNA — must reject (M4)\n"
+    
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": input_text + situation}
+    ]
+    
+    # Call Mistral
+    response = client.chat.complete(
+        model=MISTRAL_MODEL,
+        messages=messages,
+        temperature=0.2,
+        max_tokens=1024
+    )
+    llm_reply = response.choices[0].message.content or ""
+    
+    # Extract and validate JSON
+    json_reply = _extract_json_from_cot(llm_reply)
+    final_reply = _validate_and_fix(json_reply, obs or {}, action)
+    
+    # Respond via A2A
+    await updater.add_artifact(
+        parts=[Part(root=TextPart(text=final_reply))],
+        name="Response"
+    )
