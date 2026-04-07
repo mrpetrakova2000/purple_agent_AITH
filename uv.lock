@@ -191,6 +191,17 @@ wheels = [
 ]
 
 [[package]]
+name = "meta-game-bargaining-agent-purple"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "a2a-sdk", extra = ["http-server"] },
+    { name = "mistralai" },
+    { name = "python-dotenv" },
+    { name = "uvicorn" },
+]
+
+[[package]]
 name = "google-auth"
 version = "2.43.0"
 source = { registry = "https://pypi.org/simple" }
